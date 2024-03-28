@@ -1,0 +1,70 @@
+version: '3.8'
+services:
+  mongodb-standalone:
+    image: mongo:latest
+    ports:
+      - "27018:27017"
+
+  mongodb:
+    image: mongo:7.0
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - 27017:27017
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017'}]}) }" | mongosh --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+    volumes:
+      - "mongo_data:/data/db"
+      - "mongo_config:/data/configdb"
+    networks:
+      - common_network
+
+  mongo-express:
+    image: mongo-express:latest
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: "mongodb://mongodb:27017/?replicaSet=rs0"
+    depends_on:
+      - mongodb
+    networks:
+      - common_network
+
+  minio:
+    image: quay.io/minio/minio
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data  --console-address ":9001"
+    networks:
+      - common_network
+
+  simulator:
+    build: ./simulator
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/your_database?replicaSet=rs0
+    depends_on:
+      - mongodb
+    networks:
+      - common_network
+
+volumes:
+  mongo_data:
+  mongo_config:
+  minio_data:
+
+networks:
+  common_network:
+    name: common_network
+    driver: bridge
